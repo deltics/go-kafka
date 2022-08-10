@@ -13,7 +13,7 @@ type TopicHandler func(context.Context, []byte) error
 type TopicHandlerMap map[string]TopicHandler
 
 type Config struct {
-	mockApi            bool
+	hooks              interface{}
 	ctx                context.Context
 	cm                 ConfigMap
 	maxProducerRetries int
@@ -39,7 +39,7 @@ func (c *Config) ConfigMap() *kafka.ConfigMap {
 
 func (c *Config) Copy() *Config {
 	return &Config{
-		mockApi:    c.mockApi,
+		hooks:      c.hooks,
 		middleware: c.middleware,
 		cm:         c.Map(),
 		handlers:   c.TopicHandlers(),
@@ -82,9 +82,9 @@ func (c *Config) TopicIds() []string {
 	return ta
 }
 
-func (c *Config) WithMockApi() *Config {
+func (c *Config) WithHooks(p interface{}) *Config {
 	r := c.Copy()
-	r.mockApi = true
+	r.hooks = p
 	return r
 }
 
@@ -159,14 +159,16 @@ func (c *Config) WithTopicHandler(t string, fn TopicHandler) *Config {
 	return r
 }
 
+type configKeyId = int
+
 const (
-	bootstrapServers = iota
+	bootstrapServers configKeyId = iota
 	enableAutoCommit
 	enableIdempotence
 	groupId
 )
 
-var key = map[int]string{
+var key = map[configKeyId]string{
 	bootstrapServers:  "bootstrap.servers",
 	enableAutoCommit:  "enable.auto.commit",
 	enableIdempotence: "enable.idempotence",

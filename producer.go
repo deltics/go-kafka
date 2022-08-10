@@ -2,13 +2,11 @@ package kafka
 
 import (
 	"context"
+	"kafka/hooks"
 	"time"
 
 	"github.com/confluentinc/confluent-kafka-go/kafka"
 	log "github.com/sirupsen/logrus"
-
-	"kafka/api"
-	"kafka/mock"
 )
 
 type ETimeOut struct{}
@@ -16,28 +14,31 @@ type ETimeOut struct{}
 func (e ETimeOut) Error() string { return "timed out" }
 
 type producer struct {
-	api        api.ProducerHooks
+	hooks      hooks.ProducerHooks
 	config     *Config
 	producer   *kafka.Producer
 	middleware MessageMiddleware
 }
 
 func NewProducer(cfg *Config) (*producer, error) {
-	api := api.Producer
-	if cfg.mockApi {
-		api = mock.Producer
+	phk, ok := cfg.hooks.(hooks.ProducerHooks)
+	if !ok {
+		if phk != nil {
+			panic("invalid provider")
+		}
+		phk = hooks.HookProducer()
 	}
 
 	var kp *kafka.Producer
 	var err error
-	if kp, err = api.Create(cfg.ConfigMap()); err != nil {
+	if kp, err = phk.Create(cfg.ConfigMap()); err != nil {
 		log.WithError(err).
 			Error("Failed to create kafka producer")
 		return nil, err
 	}
 
 	return &producer{
-		api:        api,
+		hooks:      phk,
 		config:     cfg.Copy(),
 		producer:   kp,
 		middleware: cfg.middleware,
@@ -45,7 +46,7 @@ func NewProducer(cfg *Config) (*producer, error) {
 }
 
 func (p *producer) Close() {
-	p.api.Close(p.producer)
+	p.hooks.Close(p.producer)
 }
 
 func (p *producer) Run() {
@@ -58,7 +59,7 @@ func (p *producer) Run() {
 	}
 
 	go func() {
-		for e := range p.api.Events(p.producer) {
+		for e := range p.hooks.Events(p.producer) {
 			switch ev := e.(type) {
 			case *kafka.Message:
 				// The message delivery report, indicating success or
@@ -101,7 +102,7 @@ func (p *producer) Produce(msg *kafka.Message, ch chan kafka.Event) error {
 	d := 500 * time.Millisecond
 
 	for r >= 0 {
-		err := p.api.Produce(p.producer, msg, ch)
+		err := p.hooks.Produce(p.producer, msg, ch)
 
 		if err != nil {
 			if err.(kafka.Error).Code() == kafka.ErrQueueFull && r > 0 {

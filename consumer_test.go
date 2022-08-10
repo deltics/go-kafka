@@ -10,12 +10,15 @@ import (
 )
 
 func TestThatTheConsumerIsClosedWhenRunTerminates(t *testing.T) {
-	// SPY
+	// MOCK
 	closed := false
 
+	p := mock.ConsumerHooks()
+	p.Funcs().Close = func(c *kafka.Consumer) { closed = true }
+
 	// ARRANGE
-	c, _ := NewConsumer(NewConfig().WithMockApi())
-	c.api.Close = func(c *kafka.Consumer) { closed = true }
+	cfg := NewConfig().WithHooks(p)
+	c, _ := NewConsumer(cfg)
 
 	// ACT
 	c.Run()
@@ -27,19 +30,21 @@ func TestThatTheConsumerIsClosedWhenRunTerminates(t *testing.T) {
 }
 
 func TestThatTheConsumerSubscribesToTopicsWithHandlers(t *testing.T) {
-	// SPY
+	// MOCK
 	topics := []string{}
 
+	p := mock.ConsumerHooks()
+	p.Funcs().Subscribe = func(c *kafka.Consumer, ta []string, rcb kafka.RebalanceCb) error {
+		topics = append(topics, ta...)
+		return nil
+	}
+
 	// ARRANGE
-	cfg := NewConfig().WithMockApi().
+	cfg := NewConfig().WithHooks(p).
 		WithTopicHandler("topicA", func(ctx context.Context, msg []byte) error { return nil }).
 		WithTopicHandler("topicB", func(ctx context.Context, msg []byte) error { return nil })
 
 	c, _ := NewConsumer(cfg)
-	c.api.Subscribe = func(c *kafka.Consumer, ta []string, rcb kafka.RebalanceCb) error {
-		topics = append(topics, ta...)
-		return nil
-	}
 
 	// ACT
 	c.Run()
@@ -57,11 +62,17 @@ func TestThatTheConsumerSubscribesToTopicsWithHandlers(t *testing.T) {
 }
 
 func TestThatTheConsumerDispatchesMessagesToTheCorrectTopicHandler(t *testing.T) {
-	// SPY
+	// MOCK
 	received := map[string]string{}
 
+	p := mock.ConsumerHooks()
+	p.Messages([]interface{}{
+		mock.StringMessage("topicA", "message for A"),
+		mock.StringMessage("topicB", "message for B"),
+	})
+
 	// ARRANGE
-	cfg := NewConfig().WithMockApi().
+	cfg := NewConfig().WithHooks(p).
 		WithTopicHandler("topicA", func(ctx context.Context, msg []byte) error {
 			received["topicA"] = string(msg)
 			return nil
@@ -72,10 +83,6 @@ func TestThatTheConsumerDispatchesMessagesToTheCorrectTopicHandler(t *testing.T)
 		})
 
 	c, _ := NewConsumer(cfg)
-	c.api.MessageReader = mock.Messages([]interface{}{
-		mock.MessageWithString("topicA", "message for A"),
-		mock.MessageWithString("topicB", "message for B"),
-	})
 
 	// ACT
 	c.Run()
@@ -93,12 +100,18 @@ func TestThatTheConsumerDispatchesMessagesToTheCorrectTopicHandler(t *testing.T)
 }
 
 func TestThatConsumerMiddlewareIsCalled(t *testing.T) {
-	// ARRANGE
+	// MOCK
 	topicId := "topicA"
 	message := "test message"
 	var middlewareReceived string
 
-	cfg := NewConfig().WithMockApi().
+	p := mock.ConsumerHooks()
+	p.Messages([]interface{}{
+		mock.StringMessage(topicId, message),
+	})
+
+	// ARRANGE
+	cfg := NewConfig().WithHooks(p).
 		WithMiddleware(func(bytes []byte) ([]byte, error) {
 			middlewareReceived = string(bytes)
 			return bytes, nil
@@ -106,10 +119,6 @@ func TestThatConsumerMiddlewareIsCalled(t *testing.T) {
 		WithTopicHandler(topicId, func(ctx context.Context, msg []byte) error { return nil })
 
 	c, _ := NewConsumer(cfg)
-
-	c.api.MessageReader = mock.Messages([]interface{}{
-		mock.MessageWithString(topicId, message),
-	})
 
 	// ACT
 	c.Run()
@@ -119,15 +128,3 @@ func TestThatConsumerMiddlewareIsCalled(t *testing.T) {
 		t.Error("Middleware was not called")
 	}
 }
-
-// func Test(t *testing.T) {
-// 	// ARRANGE
-// 	c := NewConsumer(NewConfig(ConfigMap{}))
-
-// 	// ACT
-
-// 	// ASSERT
-// 	if  {
-// 		t.Error("")
-// 	}
-// }
