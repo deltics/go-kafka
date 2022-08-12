@@ -1,9 +1,9 @@
 package mock
 
 import (
-	"kafka/hooks"
-
 	"github.com/confluentinc/confluent-kafka-go/kafka"
+
+	"github.com/deltics/go-kafka/hooks"
 )
 
 type producerFuncs struct {

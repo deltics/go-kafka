@@ -6,7 +6,7 @@ import (
 	"github.com/confluentinc/confluent-kafka-go/kafka"
 	log "github.com/sirupsen/logrus"
 
-	"kafka/hooks"
+	"github.com/deltics/go-kafka/hooks"
 )
 
 type Consumer struct {
@@ -36,7 +36,7 @@ func NewConsumer(cfg *Config) (*Consumer, error) {
 
 	return &Consumer{
 		hooks:      ch,
-		config:     cfg.Copy(),
+		config:     cfg.copy(),
 		consumer:   kc,
 		middleware: cfg.middleware,
 		handlers:   cfg.handlers,

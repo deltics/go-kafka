@@ -3,10 +3,11 @@ package mock
 import (
 	"errors"
 	"fmt"
-	"kafka/hooks"
 	"time"
 
 	"github.com/confluentinc/confluent-kafka-go/kafka"
+
+	"github.com/deltics/go-kafka/hooks"
 )
 
 type consumerFuncs struct {

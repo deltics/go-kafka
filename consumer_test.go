@@ -6,7 +6,7 @@ import (
 
 	"github.com/confluentinc/confluent-kafka-go/kafka"
 
-	"kafka/mock"
+	"github.com/deltics/go-kafka/mock"
 )
 
 func TestThatTheConsumerIsClosedWhenRunTerminates(t *testing.T) {

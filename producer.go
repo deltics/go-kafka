@@ -2,11 +2,12 @@ package kafka
 
 import (
 	"context"
-	"kafka/hooks"
 	"time"
 
 	"github.com/confluentinc/confluent-kafka-go/kafka"
 	log "github.com/sirupsen/logrus"
+
+	"github.com/deltics/go-kafka/hooks"
 )
 
 type ETimeOut struct{}
@@ -39,7 +40,7 @@ func NewProducer(cfg *Config) (*producer, error) {
 
 	return &producer{
 		hooks:      phk,
-		config:     cfg.Copy(),
+		config:     cfg.copy(),
 		producer:   kp,
 		middleware: cfg.middleware,
 	}, nil

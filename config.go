@@ -37,7 +37,7 @@ func (c *Config) ConfigMap() *kafka.ConfigMap {
 	return &cm
 }
 
-func (c *Config) Copy() *Config {
+func (c *Config) copy() *Config {
 	return &Config{
 		hooks:      c.hooks,
 		middleware: c.middleware,
@@ -82,56 +82,57 @@ func (c *Config) TopicIds() []string {
 	return ta
 }
 
-func (c *Config) WithHooks(p interface{}) *Config {
-	r := c.Copy()
-	r.hooks = p
+func (c *Config) WithHooks(hooks interface{}) *Config {
+	r := c.copy()
+	r.hooks = hooks
 	return r
 }
 
 func (c *Config) With(k string, v interface{}) *Config {
-	r := c.Copy()
+	r := c.copy()
 	r.cm[k] = v
 	return r
 }
 
 func (c *Config) WithContext(ctx context.Context) *Config {
-	r := c.Copy()
+	r := c.copy()
 	r.ctx = ctx
 	return r
 }
 
 func (c *Config) WithAutoCommit(v bool) *Config {
-	r := c.Copy()
+	r := c.copy()
 	r.cm[key[enableAutoCommit]] = v
 	return r
 }
 
 func (c *Config) WithBootstrapServers(s string) *Config {
-	r := c.Copy()
+	r := c.copy()
 	r.cm[key[bootstrapServers]] = s
 	return r
 }
 
 func (c *Config) WithMiddleware(m MessageMiddleware) *Config {
-	r := c.Copy()
+	r := c.copy()
 	r.middleware = m
 	return r
 }
 
 func (c *Config) WithGroupId(s string) *Config {
-	r := c.Copy()
+	r := c.copy()
 	r.cm[key[groupId]] = s
 	return r
 }
 
 func (c *Config) WithIdempotence(v bool) *Config {
-	r := c.Copy()
+	r := c.copy()
 	r.cm[key[enableIdempotence]] = v
 	return r
 }
 
+// TODO: Alternate producer retry strategies: Linear (constant delay time) vs Exponential (the current implementation)
 func (c *Config) WithMaxProducerRetries(i int) *Config {
-	r := c.Copy()
+	r := c.copy()
 
 	if i < 0 {
 		i = 0
@@ -148,13 +149,13 @@ func (c *Config) WithMaxProducerRetries(i int) *Config {
 }
 
 func (c *Config) WithSynchronous(v bool) *Config {
-	r := c.Copy()
+	r := c.copy()
 	r.synchronous = v
 	return r
 }
 
 func (c *Config) WithTopicHandler(t string, fn TopicHandler) *Config {
-	r := c.Copy()
+	r := c.copy()
 	r.handlers[t] = fn
 	return r
 }
