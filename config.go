@@ -6,68 +6,35 @@ import (
 	"strings"
 
 	"github.com/confluentinc/confluent-kafka-go/kafka"
+
+	_hooks "github.com/deltics/go-kafka/hooks"
 )
 
-type ConfigMap map[string]interface{}
 type MessageMiddleware func(*kafka.Message) (*kafka.Message, error)
-type TopicHandler func(context.Context, *kafka.Message) error
-type TopicHandlerMap map[string]TopicHandler
+type MessageHandler func(context.Context, *kafka.Message) error
 
 type config struct {
 	hooks      interface{}
-	config     ConfigMap
+	config     configMap
 	middleware MessageMiddleware
 	// Consumer-only members
-	ctx      context.Context // passed in topic handler calls
-	handlers TopicHandlerMap // map of topic-name:handler
+	messageHandlers messageHandlerMap // map of topic-name:handler
 }
 
 func NewConfig() *config {
 	return &config{
-		config:   ConfigMap{},
-		handlers: TopicHandlerMap{},
+		config:          configMap{},
+		messageHandlers: messageHandlerMap{},
 	}
 }
 
 func (c *config) copy() *config {
 	return &config{
-		hooks:      c.hooks,
-		middleware: c.middleware,
-		config:     c.config.copy(),
-		handlers:   c.handlers.copy(),
+		hooks:           c.hooks,
+		middleware:      c.middleware,
+		config:          c.config.copy(),
+		messageHandlers: c.messageHandlers.copy(),
 	}
-}
-
-func (cm ConfigMap) copy() ConfigMap {
-	copy := ConfigMap{}
-	for k, v := range cm {
-		copy[k] = v
-	}
-	return copy
-}
-
-func (cm ConfigMap) configMap() *kafka.ConfigMap {
-	kcm := kafka.ConfigMap{}
-	for k, v := range cm {
-		kcm[k] = v
-	}
-	return &kcm
-}
-
-func (thm TopicHandlerMap) copy() TopicHandlerMap {
-	copy := TopicHandlerMap{}
-	for k, v := range thm {
-		copy[k] = v
-	}
-	return copy
-}
-
-func (thm TopicHandlerMap) topicIds() []string {
-	ids := make([]string, 0, len(thm))
-	for k := range thm {
-		ids = append(ids, k)
-	}
-	return ids
 }
 
 func (c *config) autoCommit() bool {
@@ -75,36 +42,21 @@ func (c *config) autoCommit() bool {
 	return !ok || enabled.(bool)
 }
 
-func (c *config) With(k string, v interface{}) *config {
+func (c *config) With(key string, value interface{}) *config {
 	r := c.copy()
-	r.config[k] = v
-	return r
-}
-
-func (c *config) WithBatchSize(size int) *config {
-	r := c.copy()
-	r.config[key[batchSize]] = size
-	return c
-}
-
-func (c *config) WithHooks(hooks interface{}) *config {
-	r := c.copy()
-	r.hooks = hooks
-	if r.config[key[bootstrapServers]] == "" {
-		r.config[key[bootstrapServers]] = "mock"
-	}
-	return r
-}
-
-func (c *config) WithContext(ctx context.Context) *config {
-	r := c.copy()
-	r.ctx = ctx
+	r.config[key] = value
 	return r
 }
 
 func (c *config) WithAutoCommit(v bool) *config {
 	r := c.copy()
 	r.config[key[enableAutoCommit]] = v
+	return r
+}
+
+func (c *config) WithBatchSize(size int) *config {
+	r := c.copy()
+	r.config[key[batchSize]] = size
 	return r
 }
 
@@ -123,18 +75,32 @@ func (c *config) WithBootstrapServers(servers interface{}) *config {
 	return r
 }
 
-func (c *config) WithMiddleware(m MessageMiddleware) *config {
+func (c *config) WithHooks(hooks interface{}) *config {
+	_, consumerHooks := hooks.(_hooks.ConsumerHooks)
+	_, producerHooks := hooks.(_hooks.ProducerHooks)
+
+	if !consumerHooks && !producerHooks {
+		panic("invalid hooks; must implement ConsumerHooks or ProducerHooks")
+	}
+
 	r := c.copy()
-	r.middleware = m
+	r.hooks = hooks
 	return r
 }
 
-// WithNoClient is for use in tests only.  It returns a Config with `bootstrap.servers`
-// set to `test://noclient` which results in the Consumer or Provider initialising
-// a dummy client rather than attempting to connect a real client to any broker.
+func (c *config) WithMiddleware(middleware MessageMiddleware) *config {
+	r := c.copy()
+	r.middleware = middleware
+	return r
+}
+
+// WithNoClient returns a Config configured to prevent Consumer or Provider
+// initialisation from connecting a client to any broker.  This is
+// intended for use in TESTS only.
 //
 // Attempting to use a Consumer or Producer configured with this setting is
-// unsupported and is likely to result in panics or unpredictable behaviour.
+// unsupported and is likely to result in errors, panics or other
+// unpredictable behaviour.
 //
 // This has limited use cases but is necessary to test certain aspects of the
 // Consumer and Producer client hooking mechanism.
@@ -156,8 +122,8 @@ func (c *config) WithIdempotence(v bool) *config {
 	return r
 }
 
-func (c *config) WithTopicHandler(t string, fn TopicHandler) *config {
+func (c *config) WithMessageHandler(t string, fn MessageHandler) *config {
 	r := c.copy()
-	r.handlers[t] = fn
+	r.messageHandlers[t] = fn
 	return r
 }

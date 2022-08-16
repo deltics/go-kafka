@@ -13,7 +13,7 @@ type Consumer struct {
 	hooks      hooks.ConsumerHooks
 	config     *config
 	consumer   *kafka.Consumer
-	handlers   TopicHandlerMap
+	handlers   messageHandlerMap
 	middleware MessageMiddleware
 }
 
@@ -41,7 +41,7 @@ func NewConsumer(cfg *config) (*Consumer, error) {
 		config:     cfg.copy(),
 		consumer:   kc,
 		middleware: cfg.middleware,
-		handlers:   cfg.handlers.copy(),
+		handlers:   cfg.messageHandlers.copy(),
 	}, nil
 }
 
@@ -49,16 +49,12 @@ func (c *Consumer) Close() {
 	c.hooks.Close(c.consumer)
 }
 
-func (c *Consumer) Run() error {
+func (c *Consumer) Run(ctx context.Context) error {
 	defer c.Close()
 
-	ctx := c.config.ctx
-	if ctx == nil {
-		ctx = context.TODO()
-	}
 	autoCommit := c.config.autoCommit()
 
-	if err := c.hooks.Subscribe(c.consumer, c.config.handlers.topicIds(), nil); err != nil {
+	if err := c.hooks.Subscribe(c.consumer, c.config.messageHandlers.topicIds(), nil); err != nil {
 		return err
 	}
 

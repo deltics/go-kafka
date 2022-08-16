@@ -21,11 +21,11 @@ func TestThatTheConsumerIsClosedWhenRunTerminates(t *testing.T) {
 	c, _ := NewConsumer(cfg)
 
 	// ACT
-	c.Run()
+	c.Run(context.Background())
 
 	// ASSERT
 	if !closed {
-		t.Error("Consumer was not closed")
+		t.Error("consumer was not closed")
 	}
 }
 
@@ -41,23 +41,23 @@ func TestThatTheConsumerSubscribesToTopicsWithHandlers(t *testing.T) {
 
 	// ARRANGE
 	cfg := NewConfig().WithHooks(p).
-		WithTopicHandler("topicA", func(ctx context.Context, msg *kafka.Message) error { return nil }).
-		WithTopicHandler("topicB", func(ctx context.Context, msg *kafka.Message) error { return nil })
+		WithMessageHandler("topicA", func(ctx context.Context, msg *kafka.Message) error { return nil }).
+		WithMessageHandler("topicB", func(ctx context.Context, msg *kafka.Message) error { return nil })
 
 	c, _ := NewConsumer(cfg)
 
 	// ACT
-	c.Run()
+	c.Run(context.Background())
 
 	// ASSERT
 	if len(topics) != 2 {
-		t.Errorf("Expected %d topics to be subscribed, got %d", 2, len(topics))
+		t.Errorf("expected %d topics to be subscribed, got %d", 2, len(topics))
 	}
 	if topics[0] != "topicA" && topics[1] != "topicA" {
-		t.Error("Consumer did not subscribe to topicA")
+		t.Error("consumer did not subscribe to topicA")
 	}
 	if topics[0] != "topicB" && topics[1] != "topicB" {
-		t.Error("Consumer did not subscribe to topicB")
+		t.Error("consumer did not subscribe to topicB")
 	}
 }
 
@@ -73,11 +73,11 @@ func TestThatTheConsumerDispatchesMessagesToTheCorrectTopicHandler(t *testing.T)
 
 	// ARRANGE
 	cfg := NewConfig().WithHooks(p).
-		WithTopicHandler("topicA", func(ctx context.Context, msg *kafka.Message) error {
+		WithMessageHandler("topicA", func(ctx context.Context, msg *kafka.Message) error {
 			received["topicA"] = string(msg.Value)
 			return nil
 		}).
-		WithTopicHandler("topicB", func(ctx context.Context, msg *kafka.Message) error {
+		WithMessageHandler("topicB", func(ctx context.Context, msg *kafka.Message) error {
 			received["topicB"] = string(msg.Value)
 			return nil
 		})
@@ -85,17 +85,17 @@ func TestThatTheConsumerDispatchesMessagesToTheCorrectTopicHandler(t *testing.T)
 	c, _ := NewConsumer(cfg)
 
 	// ACT
-	c.Run()
+	c.Run(context.Background())
 
 	// ASSERT
 	if len(received) != 2 {
-		t.Errorf("Expected %d topic handlers to receive messages, got %d", 2, len(received))
+		t.Errorf("expected %d topic handlers to receive messages, got %d", 2, len(received))
 	}
 	if received["topicA"] != "message for A" {
-		t.Errorf("Expected handler for %v would receive %v, got %v", "topicA", "message for A", received["topicA"])
+		t.Errorf("expected handler for %v would receive %v, got %v", "topicA", "message for A", received["topicA"])
 	}
 	if received["topicB"] != "message for B" {
-		t.Errorf("Expected handler for %v would receive %v, got %v", "topicB", "message for B", received["topicB"])
+		t.Errorf("expected handler for %v would receive %v, got %v", "topicB", "message for B", received["topicB"])
 	}
 }
 
@@ -116,15 +116,15 @@ func TestThatConsumerMiddlewareIsCalled(t *testing.T) {
 			middlewareReceived = string(msg.Value)
 			return msg, nil
 		}).
-		WithTopicHandler(topicId, func(ctx context.Context, msg *kafka.Message) error { return nil })
+		WithMessageHandler(topicId, func(ctx context.Context, msg *kafka.Message) error { return nil })
 
 	c, _ := NewConsumer(cfg)
 
 	// ACT
-	c.Run()
+	c.Run(context.Background())
 
 	// ASSERT
 	if middlewareReceived != message {
-		t.Error("Middleware was not called")
+		t.Error("middleware was not called")
 	}
 }
