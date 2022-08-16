@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/confluentinc/confluent-kafka-go/kafka"
-	log "github.com/sirupsen/logrus"
 
 	"github.com/deltics/go-kafka/hooks"
 )
@@ -34,8 +33,6 @@ func NewConsumer(cfg *config) (*Consumer, error) {
 	var kc *kafka.Consumer
 	var err error
 	if kc, err = hk.Create(cfg.config.configMap()); err != nil {
-		log.WithError(err).
-			Error("Failed to create kafka consumer")
 		return nil, err
 	}
 
@@ -52,28 +49,24 @@ func (c *Consumer) Close() {
 	c.hooks.Close(c.consumer)
 }
 
-func (c *Consumer) Run() {
+func (c *Consumer) Run() error {
 	defer c.Close()
 
 	ctx := c.config.ctx
 	if ctx == nil {
-		log.Warning("no context")
 		ctx = context.TODO()
 	}
 	autoCommit := c.config.autoCommit()
 
 	if err := c.hooks.Subscribe(c.consumer, c.config.handlers.topicIds(), nil); err != nil {
-		log.WithError(err).
-			Error("error subscribing to topics")
-		return
+		return err
 	}
 
 	for {
 		msg, err := c.hooks.ReadMessage(c.consumer, -1)
 		if err != nil {
 			// TODO: Check msg for topic/partition info to include in error log
-			log.Error(err)
-			break
+			return err
 		}
 
 		if msg == nil {
@@ -92,7 +85,7 @@ func (c *Consumer) Run() {
 		if c.middleware != nil {
 			msg, err = c.middleware(msg)
 			if err != nil {
-				log.Error(err)
+				// TODO: callback notifications
 				continue
 			}
 		}
@@ -101,8 +94,7 @@ func (c *Consumer) Run() {
 		if err == nil && !autoCommit {
 			_, err = c.hooks.CommitOffset(c.consumer, []kafka.TopicPartition{msg.TopicPartition})
 			if err != nil {
-				log.WithError(err).
-					Error("failed to commit offset")
+				return err
 			}
 		}
 	}

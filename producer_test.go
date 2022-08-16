@@ -79,6 +79,28 @@ func TestThatCheckEventReturnsErrorForKafkaError(t *testing.T) {
 	}
 }
 
+func TestThatNewProducerReturnsErrorsCorrectly(t *testing.T) {
+	// ARRANGE
+	wanted := errors.New("error")
+
+	hk := mock.ProducerHooks()
+	hk.Funcs().Create = func(cfg *kafka.ConfigMap) (*kafka.Producer, error) { return nil, wanted }
+
+	cfg := NewConfig().WithHooks(hk)
+
+	// ACT
+	producer, got := NewProducer(cfg)
+
+	// ASSERT
+	if producer != nil {
+		t.Fatalf("wanted a nil producer, got %T", producer)
+	}
+
+	if wanted != got {
+		t.Fatalf("wanted error %T, got %T", wanted, got)
+	}
+}
+
 func TestThatNewProducerFromConfigWithNoHooksIsHookedCorrectly(t *testing.T) {
 	// ARRANGE
 	cfg := NewConfig().WithNoClient()

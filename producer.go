@@ -2,10 +2,8 @@ package kafka
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/confluentinc/confluent-kafka-go/kafka"
-	log "github.com/sirupsen/logrus"
 
 	"github.com/deltics/go-kafka/hooks"
 )
@@ -41,8 +39,6 @@ func NewProducer(cfg *config) (*producer, error) {
 	var kp *kafka.Producer
 	var err error
 	if kp, err = phk.Create(cfg.config.configMap()); err != nil {
-		log.WithError(err).
-			Error("Failed to create kafka producer")
 		return nil, err
 	}
 
@@ -87,15 +83,8 @@ func (p *producer) HandleEvents(ctx context.Context, handler ProducerEventHandle
 				// The message delivery report, indicating success or
 				// permanent failure after retries have been exhausted.
 				if err := ev.TopicPartition.Error; err != nil {
-					log.WithError(err).
-						WithField("kafka_producer", p.config).
-						WithField("kafka_message", ev).
-						Error("delivery failed")
 					handler.OnMessageError(ev, ev.TopicPartition.Error)
 				} else {
-					log.WithField("kafka_producer", p.config).
-						WithField("kafka_message", ev).
-						Info("delivered")
 					handler.OnMessageDelivered(ev)
 				}
 			case kafka.Error:
@@ -106,17 +95,8 @@ func (p *producer) HandleEvents(ctx context.Context, handler ProducerEventHandle
 				// as the underlying client will automatically try to
 				// recover from any errors encountered, the application
 				// does not need to take action on them.
-				log.WithField("kafka_producer", p.config).
-					WithField("delivery_error", ev).
-					Warning(ev)
 				handler.OnProducerError(ev, &close)
 			default:
-				log.WithField("kafka_producer", p.config).
-					WithField("delivery_event", map[string]string{
-						"type":  fmt.Sprintf("%T", ev),
-						"event": ev.String(),
-					}).
-					Info("delivery event ignored")
 				handler.OnUnexpectedEvent(ev, &close)
 			}
 			// If a ProducerError or UnexpectedEvent handler signals that the
