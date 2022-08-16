@@ -108,9 +108,94 @@ func TestThatNewProducerPanicsIfConfigHasConsumerHooks(t *testing.T) {
 	}()
 
 	// ACT
-	NewProducer(cfg)
+	_, err := NewProducer(cfg)
 
 	// ASSERT (see above)
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestThatCloseCallsCloseOnTheProducer(t *testing.T) {
+
+	closeCalled := false
+
+	// ARRANGE
+	hk := mock.ProducerHooks()
+	hk.Funcs().Close = func(p *kafka.Producer) { closeCalled = true }
+
+	cfg := NewConfig().WithHooks(hk)
+
+	// ACT
+	p, err := NewProducer(cfg)
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+	p.Close()
+
+	// ASSERT
+	if closeCalled != true {
+		t.Error("Close() was not called")
+	}
+}
+
+func TestThatFlushCallsFlushOnTheProducer(t *testing.T) {
+
+	flushCalled := false
+
+	// ARRANGE
+	hk := mock.ProducerHooks()
+	hk.Funcs().Flush = func(p *kafka.Producer, timeoutMs int) int { flushCalled = true; return 0 }
+
+	cfg := NewConfig().WithHooks(hk)
+
+	// ACT
+	p, err := NewProducer(cfg)
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+	p.Flush(100)
+
+	// ASSERT
+	if flushCalled != true {
+		t.Error("Flush() was not called")
+	}
+}
+
+func TestThatFlushAllCallsFlushOnTheProducerUntilZeroIsReturned(t *testing.T) {
+
+	flushCalls := 0
+	flushesRemaining := 10
+
+	// ARRANGE
+	hk := mock.ProducerHooks()
+	hk.Funcs().Flush = func(p *kafka.Producer, timeoutMs int) int {
+		flushCalls++
+		flushesRemaining -= 1
+		return flushesRemaining
+	}
+
+	cfg := NewConfig().WithHooks(hk)
+
+	// ACT
+	p, err := NewProducer(cfg)
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+	p.FlushAll()
+
+	// ASSERT
+	wanted := 10
+	got := flushCalls
+	if wanted != got {
+		t.Errorf("wanted %d Flush() calls, got %d", wanted, got)
+	}
+
+	wanted = 0
+	got = flushesRemaining
+	if wanted != got {
+		t.Errorf("wanted %d flushes remaining, got %d", wanted, got)
+	}
 }
 
 func TestThatMustProduceReturnsSuccessfullyDeliveredMessage(t *testing.T) {

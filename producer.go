@@ -10,9 +10,9 @@ import (
 	"github.com/deltics/go-kafka/hooks"
 )
 
-type ETimeOut struct{}
+type ErrTimeOut struct{}
 
-func (e ETimeOut) Error() string { return "timed out" }
+func (e ErrTimeOut) Error() string { return "timed out" }
 
 type producer struct {
 	hooks          hooks.ProducerHooks
@@ -55,35 +55,12 @@ func NewProducer(cfg *config) (*producer, error) {
 	}, nil
 }
 
-// MustProduce creates a temporary producer from a specified Config to produce
-// a specified message.  The temporary producer is closed immediately that the
-// message is delivered or a delivery error is returned.
-func MustProduce(ctx context.Context, cfg *config, msg *kafka.Message) (*kafka.Message, error) {
-
-	if msg.TopicPartition.Topic == nil || *msg.TopicPartition.Topic == "" {
-		return nil, &ErrNoTopicId{message: "message has no topic id"}
-	}
-
-	prod, err := NewProducer(cfg)
-	if err != nil {
-		return nil, err
-	}
-	defer prod.Close()
-
-	return prod.MustProduce(msg)
-}
-
 func (p *producer) Close() {
 	p.hooks.Close(p.producer)
 }
 
 func (p *producer) Flush(timeoutMs int) int {
-	r := p.hooks.Flush(p.producer, timeoutMs)
-	if r > 0 {
-		log.Infof("%d events remain", r)
-	}
-
-	return r
+	return p.hooks.Flush(p.producer, timeoutMs)
 }
 
 func (p *producer) FlushAll() {
@@ -199,4 +176,22 @@ func CheckEvent(event kafka.Event) (*kafka.Message, error) {
 	}
 
 	return nil, ErrUnexpectedDeliveryEvent{event: event}
+}
+
+// MustProduce creates a temporary producer from a specified Config to produce
+// a specified message.  The temporary producer is closed immediately that the
+// message is delivered or a delivery error is returned.
+func MustProduce(ctx context.Context, cfg *config, msg *kafka.Message) (*kafka.Message, error) {
+
+	if msg.TopicPartition.Topic == nil || *msg.TopicPartition.Topic == "" {
+		return nil, &ErrNoTopicId{message: "message has no topic id"}
+	}
+
+	prod, err := NewProducer(cfg)
+	if err != nil {
+		return nil, err
+	}
+	defer prod.Close()
+
+	return prod.MustProduce(msg)
 }
