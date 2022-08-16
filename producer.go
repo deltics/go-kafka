@@ -181,7 +181,7 @@ func CheckEvent(event kafka.Event) (*kafka.Message, error) {
 // MustProduce creates a temporary producer from a specified Config to produce
 // a specified message.  The temporary producer is closed immediately that the
 // message is delivered or a delivery error is returned.
-func MustProduce(ctx context.Context, cfg *config, msg *kafka.Message) (*kafka.Message, error) {
+func MustProduce(cfg *config, msg *kafka.Message) (*kafka.Message, error) {
 
 	if msg.TopicPartition.Topic == nil || *msg.TopicPartition.Topic == "" {
 		return nil, &ErrNoTopicId{message: "message has no topic id"}

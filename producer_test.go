@@ -1,7 +1,6 @@
 package kafka
 
 import (
-	"context"
 	"errors"
 	"reflect"
 	"testing"
@@ -198,7 +197,7 @@ func TestThatFlushAllCallsFlushOnTheProducerUntilZeroIsReturned(t *testing.T) {
 	}
 }
 
-func TestThatMustProduceReturnsSuccessfullyDeliveredMessage(t *testing.T) {
+func TestThatProducerMustProduceReturnsSuccessfullyDeliveredMessage(t *testing.T) {
 	// ARRANGE
 	topic := "test"
 	msg := kafka.Message{
@@ -220,9 +219,13 @@ func TestThatMustProduceReturnsSuccessfullyDeliveredMessage(t *testing.T) {
 	}
 
 	cfg := NewConfig().WithHooks(hk)
+	p, err := NewProducer(cfg)
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
 
 	// ACT
-	got, err := MustProduce(context.Background(), cfg, &msg)
+	got, err := p.MustProduce(&msg)
 
 	// ASSERT
 	if err != nil {
@@ -233,7 +236,7 @@ func TestThatMustProduceReturnsSuccessfullyDeliveredMessage(t *testing.T) {
 		t.Errorf("wanted %v, got %v", wanted, got)
 	}
 }
-func TestThatMustProduceReturnsMessageDeliveryErrorWithFailedMessage(t *testing.T) {
+func TestThatProducerMustProduceReturnsMessageDeliveryErrorWithFailedMessage(t *testing.T) {
 	// ARRANGE
 	topic := "test"
 	deliveryErr := errors.New("delivery failed")
@@ -254,9 +257,13 @@ func TestThatMustProduceReturnsMessageDeliveryErrorWithFailedMessage(t *testing.
 	}
 
 	cfg := NewConfig().WithHooks(hk)
+	p, err := NewProducer(cfg)
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
 
 	// ACT
-	got, err := MustProduce(context.Background(), cfg, &msg)
+	got, err := p.MustProduce(&msg)
 
 	// ASSERT
 	if err == nil {
@@ -268,7 +275,7 @@ func TestThatMustProduceReturnsMessageDeliveryErrorWithFailedMessage(t *testing.
 	}
 }
 
-func TestThatMustProduceReturnsProducerErrorWithNoMessage(t *testing.T) {
+func TestThatProducerMustProduceReturnsProducerErrorWithNoMessage(t *testing.T) {
 	// ARRANGE
 	topic := "test"
 	deliveryError := kafka.NewError(101, "retrying", false)
@@ -286,9 +293,13 @@ func TestThatMustProduceReturnsProducerErrorWithNoMessage(t *testing.T) {
 	}
 
 	cfg := NewConfig().WithHooks(hk)
+	p, err := NewProducer(cfg)
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
 
 	// ACT
-	deliveredMsg, err := MustProduce(context.Background(), cfg, &msg)
+	deliveredMsg, err := p.MustProduce(&msg)
 
 	// ASSERT
 	if deliveredMsg != nil {
@@ -311,7 +322,7 @@ type fakeevent struct{}
 
 func (*fakeevent) String() string { return "fake event" }
 
-func TestThatMustProduceReturnsUnexpectedEventsWithNoMessage(t *testing.T) {
+func TestThatProducerMustProduceReturnsUnexpectedEventsWithNoMessage(t *testing.T) {
 	// ARRANGE
 	topic := "test"
 	var deliveryError kafka.Event = &fakeevent{}
@@ -329,9 +340,13 @@ func TestThatMustProduceReturnsUnexpectedEventsWithNoMessage(t *testing.T) {
 	}
 
 	cfg := NewConfig().WithHooks(hk)
+	p, err := NewProducer(cfg)
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
 
 	// ACT
-	deliveredMsg, err := MustProduce(context.Background(), cfg, &msg)
+	deliveredMsg, err := p.MustProduce(&msg)
 
 	// ASSERT
 	if deliveredMsg != nil {
@@ -347,5 +362,50 @@ func TestThatMustProduceReturnsUnexpectedEventsWithNoMessage(t *testing.T) {
 	got := err.(ErrUnexpectedDeliveryEvent).Error()
 	if got != wanted {
 		t.Errorf("wanted %q, got %q", wanted, got)
+	}
+}
+
+func TestThatMustProduceCreatesAndClosesTemporaryProducerWithSpecifiedConfig(t *testing.T) {
+
+	sentinelFound := false
+	closeCalled := false
+
+	// ARRANGE
+	topic := "test"
+	msg := kafka.Message{
+		TopicPartition: kafka.TopicPartition{Topic: &topic},
+		Value:          []byte("test value"),
+	}
+
+	hk := mock.ProducerHooks()
+	hk.Funcs().Close = func(p *kafka.Producer) { closeCalled = true }
+	hk.Funcs().Create = func(cfg *kafka.ConfigMap) (*kafka.Producer, error) {
+		v, _ := cfg.Get("sentinel", "")
+		sentinelFound = v == "value"
+		return &kafka.Producer{}, nil
+	}
+	hk.Funcs().Produce = func(p *kafka.Producer, m *kafka.Message, c chan kafka.Event) error {
+		go func() {
+			c <- &msg
+		}()
+		return nil
+	}
+
+	cfg := NewConfig().WithHooks(hk).
+		With("sentinel", "value")
+
+	// ACT
+	_, err := MustProduce(cfg, &msg)
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+
+	// ASSERT
+	if !sentinelFound {
+		t.Error("producer was not created with expected configmap")
+	}
+
+	if !closeCalled {
+		t.Error("producer was not closed")
 	}
 }
