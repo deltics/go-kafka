@@ -2,176 +2,162 @@ package kafka
 
 import (
 	"context"
+	"fmt"
+	"strings"
 
 	"github.com/confluentinc/confluent-kafka-go/kafka"
-	log "github.com/sirupsen/logrus"
 )
 
 type ConfigMap map[string]interface{}
-type MessageMiddleware func([]byte) ([]byte, error)
-type TopicHandler func(context.Context, []byte) error
+type MessageMiddleware func(*kafka.Message) (*kafka.Message, error)
+type TopicHandler func(context.Context, *kafka.Message) error
 type TopicHandlerMap map[string]TopicHandler
 
-type Config struct {
-	hooks              interface{}
-	ctx                context.Context
-	cm                 ConfigMap
-	maxProducerRetries int
-	middleware         MessageMiddleware
-	handlers           TopicHandlerMap
-	synchronous        bool
+type config struct {
+	hooks      interface{}
+	config     ConfigMap
+	middleware MessageMiddleware
+	// Consumer-only members
+	ctx      context.Context // passed in topic handler calls
+	handlers TopicHandlerMap // map of topic-name:handler
 }
 
-func NewConfig() *Config {
-	return &Config{
-		cm:       ConfigMap{},
+func NewConfig() *config {
+	return &config{
+		config:   ConfigMap{},
 		handlers: TopicHandlerMap{},
 	}
 }
 
-func (c *Config) ConfigMap() *kafka.ConfigMap {
-	cm := kafka.ConfigMap{}
-	for k, v := range c.cm {
-		cm[k] = v
-	}
-	return &cm
-}
-
-func (c *Config) copy() *Config {
-	return &Config{
+func (c *config) copy() *config {
+	return &config{
 		hooks:      c.hooks,
 		middleware: c.middleware,
-		cm:         c.Map(),
-		handlers:   c.TopicHandlers(),
+		config:     c.config.copy(),
+		handlers:   c.handlers.copy(),
 	}
 }
 
-func (c *Config) Map() ConfigMap {
-	cm := ConfigMap{}
-	for k, v := range c.cm {
-		cm[k] = v
+func (cm ConfigMap) copy() ConfigMap {
+	copy := ConfigMap{}
+	for k, v := range cm {
+		copy[k] = v
 	}
-	return cm
+	return copy
 }
 
-func (c *Config) AutoCommitEnabled() bool {
-	enabled, ok := c.cm[key[enableAutoCommit]]
+func (cm ConfigMap) configMap() *kafka.ConfigMap {
+	kcm := kafka.ConfigMap{}
+	for k, v := range cm {
+		kcm[k] = v
+	}
+	return &kcm
+}
+
+func (thm TopicHandlerMap) copy() TopicHandlerMap {
+	copy := TopicHandlerMap{}
+	for k, v := range thm {
+		copy[k] = v
+	}
+	return copy
+}
+
+func (thm TopicHandlerMap) topicIds() []string {
+	ids := make([]string, 0, len(thm))
+	for k := range thm {
+		ids = append(ids, k)
+	}
+	return ids
+}
+
+func (c *config) autoCommit() bool {
+	enabled, ok := c.config[key[enableAutoCommit]]
 	return !ok || enabled.(bool)
 }
 
-func (c *Config) Merge(cm *ConfigMap) *Config {
-	for k, v := range *cm {
-		c.cm[k] = v
-	}
+func (c *config) With(k string, v interface{}) *config {
+	r := c.copy()
+	r.config[k] = v
+	return r
+}
+
+func (c *config) WithBatchSize(size int) *config {
+	r := c.copy()
+	r.config[key[batchSize]] = size
 	return c
 }
 
-func (c *Config) TopicHandlers() TopicHandlerMap {
-	thm := TopicHandlerMap{}
-	for k, v := range c.handlers {
-		thm[k] = v
-	}
-	return thm
-}
-
-func (c *Config) TopicIds() []string {
-	ta := []string{}
-	for k := range c.handlers {
-		ta = append(ta, k)
-	}
-	return ta
-}
-
-func (c *Config) WithHooks(hooks interface{}) *Config {
+func (c *config) WithHooks(hooks interface{}) *config {
 	r := c.copy()
 	r.hooks = hooks
+	if r.config[key[bootstrapServers]] == "" {
+		r.config[key[bootstrapServers]] = "mock"
+	}
 	return r
 }
 
-func (c *Config) With(k string, v interface{}) *Config {
-	r := c.copy()
-	r.cm[k] = v
-	return r
-}
-
-func (c *Config) WithContext(ctx context.Context) *Config {
+func (c *config) WithContext(ctx context.Context) *config {
 	r := c.copy()
 	r.ctx = ctx
 	return r
 }
 
-func (c *Config) WithAutoCommit(v bool) *Config {
+func (c *config) WithAutoCommit(v bool) *config {
 	r := c.copy()
-	r.cm[key[enableAutoCommit]] = v
+	r.config[key[enableAutoCommit]] = v
 	return r
 }
 
-func (c *Config) WithBootstrapServers(s string) *Config {
+func (c *config) WithBootstrapServers(servers interface{}) *config {
 	r := c.copy()
-	r.cm[key[bootstrapServers]] = s
+
+	switch servers := servers.(type) {
+	case []string:
+		r.config[key[bootstrapServers]] = strings.Join(servers, ",")
+	case string:
+		r.config[key[bootstrapServers]] = servers
+	default:
+		panic(fmt.Sprintf("servers is %T: must be string or []string", servers))
+	}
+
 	return r
 }
 
-func (c *Config) WithMiddleware(m MessageMiddleware) *Config {
+func (c *config) WithMiddleware(m MessageMiddleware) *config {
 	r := c.copy()
 	r.middleware = m
 	return r
 }
 
-func (c *Config) WithGroupId(s string) *Config {
+// WithNoClient is for use in tests only.  It returns a Config with `bootstrap.servers`
+// set to `test://noclient` which results in the Consumer or Provider initialising
+// a dummy client rather than attempting to connect a real client to any broker.
+//
+// Attempting to use a Consumer or Producer configured with this setting is
+// unsupported and is likely to result in panics or unpredictable behaviour.
+//
+// This has limited use cases but is necessary to test certain aspects of the
+// Consumer and Producer client hooking mechanism.
+//
+// For comprehensive mocking, faking and stubbing use WithHooks().
+func (c *config) WithNoClient() *config {
+	return c.WithBootstrapServers("test://noclient")
+}
+
+func (c *config) WithGroupId(s string) *config {
 	r := c.copy()
-	r.cm[key[groupId]] = s
+	r.config[key[groupId]] = s
 	return r
 }
 
-func (c *Config) WithIdempotence(v bool) *Config {
+func (c *config) WithIdempotence(v bool) *config {
 	r := c.copy()
-	r.cm[key[enableIdempotence]] = v
+	r.config[key[enableIdempotence]] = v
 	return r
 }
 
-// TODO: Alternate producer retry strategies: Linear (constant delay time) vs Exponential (the current implementation)
-func (c *Config) WithMaxProducerRetries(i int) *Config {
-	r := c.copy()
-
-	if i < 0 {
-		i = 0
-		log.Warning("Attempted to Config.WithMaxProducerRetries < 0 (0 was applied, no retries)")
-	}
-
-	if i > 5 {
-		i = 5
-		log.Warning("Attempted to Config.WithMaxProducerRetries > 5 (5 was applied)")
-	}
-
-	r.maxProducerRetries = i
-	return r
-}
-
-func (c *Config) WithSynchronous(v bool) *Config {
-	r := c.copy()
-	r.synchronous = v
-	return r
-}
-
-func (c *Config) WithTopicHandler(t string, fn TopicHandler) *Config {
+func (c *config) WithTopicHandler(t string, fn TopicHandler) *config {
 	r := c.copy()
 	r.handlers[t] = fn
 	return r
-}
-
-type configKeyId = int
-
-const (
-	bootstrapServers configKeyId = iota
-	enableAutoCommit
-	enableIdempotence
-	groupId
-)
-
-var key = map[configKeyId]string{
-	bootstrapServers:  "bootstrap.servers",
-	enableAutoCommit:  "enable.auto.commit",
-	enableIdempotence: "enable.idempotence",
-	groupId:           "group.id",
 }

@@ -41,8 +41,8 @@ func TestThatTheConsumerSubscribesToTopicsWithHandlers(t *testing.T) {
 
 	// ARRANGE
 	cfg := NewConfig().WithHooks(p).
-		WithTopicHandler("topicA", func(ctx context.Context, msg []byte) error { return nil }).
-		WithTopicHandler("topicB", func(ctx context.Context, msg []byte) error { return nil })
+		WithTopicHandler("topicA", func(ctx context.Context, msg *kafka.Message) error { return nil }).
+		WithTopicHandler("topicB", func(ctx context.Context, msg *kafka.Message) error { return nil })
 
 	c, _ := NewConsumer(cfg)
 
@@ -67,18 +67,18 @@ func TestThatTheConsumerDispatchesMessagesToTheCorrectTopicHandler(t *testing.T)
 
 	p := mock.ConsumerHooks()
 	p.Messages([]interface{}{
-		mock.StringMessage("topicA", "message for A"),
-		mock.StringMessage("topicB", "message for B"),
+		StringMessage("topicA", "message for A"),
+		StringMessage("topicB", "message for B"),
 	})
 
 	// ARRANGE
 	cfg := NewConfig().WithHooks(p).
-		WithTopicHandler("topicA", func(ctx context.Context, msg []byte) error {
-			received["topicA"] = string(msg)
+		WithTopicHandler("topicA", func(ctx context.Context, msg *kafka.Message) error {
+			received["topicA"] = string(msg.Value)
 			return nil
 		}).
-		WithTopicHandler("topicB", func(ctx context.Context, msg []byte) error {
-			received["topicB"] = string(msg)
+		WithTopicHandler("topicB", func(ctx context.Context, msg *kafka.Message) error {
+			received["topicB"] = string(msg.Value)
 			return nil
 		})
 
@@ -107,16 +107,16 @@ func TestThatConsumerMiddlewareIsCalled(t *testing.T) {
 
 	p := mock.ConsumerHooks()
 	p.Messages([]interface{}{
-		mock.StringMessage(topicId, message),
+		StringMessage(topicId, message),
 	})
 
 	// ARRANGE
 	cfg := NewConfig().WithHooks(p).
-		WithMiddleware(func(bytes []byte) ([]byte, error) {
-			middlewareReceived = string(bytes)
-			return bytes, nil
+		WithMiddleware(func(msg *kafka.Message) (*kafka.Message, error) {
+			middlewareReceived = string(msg.Value)
+			return msg, nil
 		}).
-		WithTopicHandler(topicId, func(ctx context.Context, msg []byte) error { return nil })
+		WithTopicHandler(topicId, func(ctx context.Context, msg *kafka.Message) error { return nil })
 
 	c, _ := NewConsumer(cfg)
 

@@ -7,14 +7,16 @@ import (
 )
 
 type producerFuncs struct {
-	Close   func(p *kafka.Producer)
-	Create  func(cfg *kafka.ConfigMap) (*kafka.Producer, error)
-	Events  func(p *kafka.Producer) chan kafka.Event
-	Produce func(p *kafka.Producer, m *kafka.Message, c chan kafka.Event) error
+	Close        func(*kafka.Producer)
+	Create       func(*kafka.ConfigMap) (*kafka.Producer, error)
+	EventChannel func(*kafka.Producer) chan kafka.Event
+	Flush        func(*kafka.Producer, int) int
+	Produce      func(*kafka.Producer, *kafka.Message, chan kafka.Event) error
 }
 
 type producer struct {
-	funcs producerFuncs
+	funcs  producerFuncs
+	events chan kafka.Event
 }
 
 type MockProducerProvider interface {
@@ -22,13 +24,17 @@ type MockProducerProvider interface {
 	Funcs() *producerFuncs
 }
 
-func MockProducer() MockProducerProvider {
+func ProducerHooks() MockProducerProvider {
+	Events := make(chan kafka.Event)
+
 	return &producer{
+		events: Events,
 		funcs: producerFuncs{
-			Close:   func(p *kafka.Producer) {},
-			Create:  func(cfg *kafka.ConfigMap) (*kafka.Producer, error) { return &kafka.Producer{}, nil },
-			Events:  func(p *kafka.Producer) chan kafka.Event { return nil },
-			Produce: func(p *kafka.Producer, m *kafka.Message, c chan kafka.Event) error { return nil },
+			Close:        func(*kafka.Producer) { close(Events) },
+			Create:       func(*kafka.ConfigMap) (*kafka.Producer, error) { return &kafka.Producer{}, nil },
+			EventChannel: func(*kafka.Producer) chan kafka.Event { return Events },
+			Flush:        func(*kafka.Producer, int) int { return 0 },
+			Produce:      func(*kafka.Producer, *kafka.Message, chan kafka.Event) error { return nil },
 		},
 	}
 }
@@ -45,8 +51,12 @@ func (p *producer) Create(cfg *kafka.ConfigMap) (*kafka.Producer, error) {
 	return p.funcs.Create(cfg)
 }
 
-func (p *producer) Events(producer *kafka.Producer) chan kafka.Event {
-	return p.funcs.Events(producer)
+func (p *producer) GetEventChannel(producer *kafka.Producer) chan kafka.Event {
+	return p.funcs.EventChannel(producer)
+}
+
+func (p *producer) Flush(producer *kafka.Producer, timeoutMs int) int {
+	return p.funcs.Flush(producer, timeoutMs)
 }
 
 func (p *producer) Produce(producer *kafka.Producer, msg *kafka.Message, ch chan kafka.Event) error {
